@@ -1,3 +1,5 @@
-# bniehuser-flask
+# bniehuser-api
 
-a flask-based api server implementing openapi spec
+a fastapi-based api server implementing openapi spec
+
+utilizing sqlalchemy orm tools and pydantic schema representations to create a fully openapi compliant api interface

@@ -8,11 +8,17 @@ authors = ["Barry Niehuser <bniehuser@gmail.com>"]
 python = "^3.8"
 fastapi = "^0.65.1"
 uvicorn = "^0.14.0"
+databases = "^0.4.3"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+passlib = "^1.7.4"
+pydantic = {extras = ["email"], version = "^1.8.2"}
+psycopg2-binary = "^2.8.6"
+python-multipart = "^0.0.5"
+bcrypt = "^3.2.0"
 
 [tool.poetry.dev-dependencies]
 python-dotenv = "^0.17.1"
 pytest = "^6.2.4"
-pytest-flask = "^1.2.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
