@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str = 'test'
     USERS_OPEN_REGISTRATION: bool = True
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
+    RAPIDAPI_KEY: Optional[str] = None
 
     class Config:
         env_file = ".env"

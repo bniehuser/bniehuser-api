@@ -470,6 +470,17 @@ optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*"
 
 [[package]]
+name = "spoonacular"
+version = "3.0"
+description = "A Python wrapper for the Spoonacular API"
+category = "main"
+optional = false
+python-versions = ">=3.*"
+
+[package.dependencies]
+requests = "*"
+
+[[package]]
 name = "sqlalchemy"
 version = "1.3.24"
 description = "Database Abstraction Library"
@@ -563,7 +574,7 @@ requests = ">=2.20"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "83e20f5367c570e0c19cae61e31b9e997f62d42caca09d23691e28bea8593aee"
+content-hash = "1c4b0f6d9005dde1722f929b69fc3144be4fac088e8bff7253959607dda429b7"
 
 [metadata.files]
 asgiref = [
@@ -929,6 +940,10 @@ rsa = [
 six = [
     {file = "six-1.16.0-py2.py3-none-any.whl", hash = "sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254"},
     {file = "six-1.16.0.tar.gz", hash = "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926"},
+]
+spoonacular = [
+    {file = "spoonacular-3.0-py3-none-any.whl", hash = "sha256:b655241d8c85bcf8ccf6b0d6c0c6279c5cba74760965275989e93d820fdac1f7"},
+    {file = "spoonacular-3.0.tar.gz", hash = "sha256:a0e7f12d84342a79bf313f1c6385175f6651771d2de7381d06430a1c4b678241"},
 ]
 sqlalchemy = [
     {file = "SQLAlchemy-1.3.24-cp27-cp27m-macosx_10_14_x86_64.whl", hash = "sha256:87a2725ad7d41cd7376373c15fd8bf674e9c33ca56d0b8036add2d634dba372e"},
