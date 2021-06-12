@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 import yfinance as yf
 from pydantic import BaseModel
 
@@ -29,14 +29,14 @@ class StockPeriod(BaseModel):
 
 class Stock(BaseModel):
     symbol: str
-    name: str
+    name: Optional[str]
     name_short: str
-    sector: str
-    industry: str
+    sector: Optional[str]
+    industry: Optional[str]
     logo_url: str
     history_period: str
     history: List[StockPeriod]
-    price: float
+    price: Optional[float]
     change: float
 
     def __init__(self, **kwargs):
@@ -46,14 +46,17 @@ class Stock(BaseModel):
         super().__init__(**kwargs)
 
 
-@router.get('/{ticker}')
+@router.get('/{ticker}', response_model=Stock)
 async def get_ticker(ticker: str):
     t = yf.Ticker(ticker)
-    h = t.history(period='7d').to_dict('records')
-    info = {key: t.info[key] for key in ['sector', 'industry', 'regularMarketPrice', 'symbol', 'shortName', 'longName', 'logo_url']}
+    if 'symbol' not in t.info:
+        raise HTTPException(status_code=404, detail='Ticker Not Found')
+
+    h = t.history(period='30d').to_dict('records')
+    info = {key: (t.info[key] if key in t.info else None) for key in ['sector', 'industry', 'regularMarketPrice', 'symbol', 'shortName', 'longName', 'logo_url']}
     return {
         **info,
         'history': h,
         'history_period': '1d',
-        'change': h[-1]['Close']-h[-2]['Close']
+        'change': h[-1]['Close']-h[-2]['Close'] if len(h) > 1 else 0
     }
