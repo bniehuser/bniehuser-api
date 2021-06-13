@@ -4,11 +4,10 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ....core.messaging import SocketScope, SocketMessage
+from ....core.messaging import SocketMessage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('WebSockets')
-r = None
 
 
 class ConnectionManager:
