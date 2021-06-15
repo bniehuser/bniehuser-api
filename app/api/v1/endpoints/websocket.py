@@ -28,8 +28,7 @@ class ConnectionManager:
 
     async def broadcast(self, message: SocketMessage):
         for recipient in self.connections:
-            if recipient != message.sender:
-                await self.connections[recipient].send_text(message.to_str())
+            await self.connections[recipient].send_text(message.to_str())
 
 
 manager = ConnectionManager()
