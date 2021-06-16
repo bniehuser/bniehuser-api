@@ -60,3 +60,12 @@ async def get_ticker(ticker: str):
         'history_period': '1d',
         'change': h[-1]['Close']-h[-2]['Close'] if len(h) > 1 else 0
     }
+
+
+@router.get('/{ticker}/history/{period}/{interval}', response_model=List[StockPeriod])
+async def get_ticker(ticker: str, period: str, interval: str):
+    t = yf.Ticker(ticker)
+    if 'symbol' not in t.info:
+        raise HTTPException(status_code=404, detail='Ticker Not Found')
+
+    return t.history(period=period, interval=interval).to_dict('records')

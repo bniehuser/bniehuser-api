@@ -4,7 +4,7 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ....core.messaging import SocketMessage
+from ....core.messaging import SocketMessage, SocketScope
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('WebSockets')
@@ -48,6 +48,11 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 if not await manager.send_direct_message(msg):
                     # send an email
                     logger.warning(f"unable to send personal message to {msg.recipient}")
+            elif msg.scope == SocketScope.PRIVATE:
+                # send back to sender, do not broadcast
+                msg2 = msg.copy()
+                msg2.recipient = msg.sender
+                await manager.send_direct_message(msg2)
             else:
                 await manager.broadcast(msg)
     except WebSocketDisconnect:
