@@ -78,9 +78,9 @@ async def on_message(message):
     if message.content[0] == BOT_ACTIVATOR:
         cmd = message.content[1:]
         if cmd == 'hello':
-            await channel.send('yo.')
+            await message.channel.send('yo.')
         elif cmd == 'words':
-            await channel.send(':flying_saucer: KLAATU BARADA NIKTO')
+            await message.channel.send(':flying_saucer: KLAATU BARADA NIKTO')
 
     elif message.author != client.user and str(message.channel.id) == os.getenv('DISCORD_CHANNEL'):
         if not socket:
