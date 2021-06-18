@@ -1,3 +1,4 @@
+import random
 import re
 import signal
 import logging
@@ -26,7 +27,7 @@ channel: Optional[GroupChannel] = None
 loop = asyncio.get_event_loop()
 owner: Optional[User] = None
 BOT_ACTIVATOR = '~'
-bot = commands.Bot(loop=loop, command_prefix='~', help_command=None)
+bot = commands.Bot(loop=loop, command_prefix=BOT_ACTIVATOR, help_command=None)
 
 
 async def connect_ws():
@@ -77,14 +78,7 @@ async def on_error(evt, *args, **kwargs):
 async def on_message(message):
     global socket
     print('[discord] message.content:', message.content)
-    if message.content[0] == BOT_ACTIVATOR:
-        cmd = message.content[1:]
-        if cmd == 'hello':
-            await message.channel.send('yo.')
-        elif cmd == 'words':
-            await message.channel.send(':flying_saucer: KLAATU BARADA NIKTO')
-
-    elif message.author != bot.user and str(message.channel.id) == os.getenv('DISCORD_CHANNEL'):
+    if message.author != bot.user and str(message.channel.id) == os.getenv('DISCORD_CHANNEL'):
         if not socket:
             print('[discord] no websocket connection')
         else:
@@ -95,6 +89,23 @@ async def on_message(message):
                 if r.group(1):
                     msg.recipient = r.group(1)
             await socket.send(msg.to_str())
+
+
+@bot.command()
+async def hello(ctx):
+    """gort says hello."""
+    await ctx.send(random.choice([
+        'yo.',
+        'well hello there!',
+        'zzzzzz...',
+        'who dis?',
+    ]))
+
+
+@bot.command()
+async def words(ctx):
+    """gort says the words."""
+    await ctx.send(':flying_saucer: KLAATU BARADA NIKTO')
 
 
 @bot.command()
