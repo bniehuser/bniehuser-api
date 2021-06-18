@@ -74,7 +74,7 @@ async def on_error(evt, *args, **kwargs):
 async def on_message(message):
     global socket
     print('[discord] message.content:', message.content)
-    if message.author != client.user:
+    if message.author != client.user and message.channel.id == os.getenv('DISCORD_CHANNEL'):
         if not socket:
             print('[discord] no websocket connection')
         else:
