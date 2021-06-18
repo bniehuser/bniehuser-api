@@ -7,6 +7,8 @@ import discord
 import websockets
 import os
 
+from discord.ext import commands;
+
 from discord import User, GroupChannel
 from dotenv import load_dotenv
 import asyncio
@@ -22,9 +24,9 @@ logger = logging.getLogger('BotDaemon')
 socket: Optional[WebSocket] = None
 channel: Optional[GroupChannel] = None
 loop = asyncio.get_event_loop()
-client = discord.Client(loop=loop)
 owner: Optional[User] = None
-BOT_ACTIVATOR = '~';
+BOT_ACTIVATOR = '~'
+bot = commands.Bot(loop=loop, command_prefix='~')
 
 
 async def connect_ws():
@@ -38,7 +40,7 @@ async def connect_ws():
             print('websocket receive:', msg)
             m = SocketMessage.from_str(msg)
             if not channel:
-                channel = client.get_channel(int(os.getenv('DISCORD_CHANNEL')))
+                channel = bot.get_channel(int(os.getenv('DISCORD_CHANNEL')))
 
             if m.scope is SocketScope.PUBLIC:
                 if channel:
@@ -49,15 +51,15 @@ async def connect_ws():
                     await owner.send(f"#{m.sender}: {m.message}")
 
 
-@client.event
+@bot.event
 async def on_ready():
     logger.info('we should be ready')
     global channel
     global owner
     if not channel:
-        channel = client.get_channel(int(os.getenv('DISCORD_CHANNEL')))
+        channel = bot.get_channel(int(os.getenv('DISCORD_CHANNEL')))
     if not owner:
-        app_info = await client.application_info()
+        app_info = await bot.application_info()
         owner = app_info.owner
 
     if not channel:
@@ -66,12 +68,12 @@ async def on_ready():
         logger.info('[discord] connected to '+os.getenv('DISCORD_CHANNEL'))
 
 
-@client.event
+@bot.event
 async def on_error(evt, *args, **kwargs):
     print("Error encountered", evt)
 
 
-@client.event
+@bot.event
 async def on_message(message):
     global socket
     print('[discord] message.content:', message.content)
@@ -82,7 +84,7 @@ async def on_message(message):
         elif cmd == 'words':
             await message.channel.send(':flying_saucer: KLAATU BARADA NIKTO')
 
-    elif message.author != client.user and str(message.channel.id) == os.getenv('DISCORD_CHANNEL'):
+    elif message.author != bot.user and str(message.channel.id) == os.getenv('DISCORD_CHANNEL'):
         if not socket:
             print('[discord] no websocket connection')
         else:
@@ -93,6 +95,53 @@ async def on_message(message):
                 if r.group(1):
                     msg.recipient = r.group(1)
             await socket.send(msg.to_str())
+
+
+@bot.command()
+async def help(ctx, args=None):
+    help_embed = discord.Embed(title="gort is helping.", colour = discord.Colour.red())
+    command_names_list = [x.name for x in bot.commands]
+
+    # If there are no arguments, just list the commands:
+    if not args:
+        help_embed.add_field(
+            name="what he does:",
+            value="\n".join([str(i+1)+". "+x.name for i,x in enumerate(bot.commands)]),
+            inline=False
+        )
+        help_embed.add_field(
+            name="learning more",
+            value="type `~help [command name]` for more info",
+            inline=False
+        )
+
+    # If the argument is a command, get the help text from that command:
+    elif args in command_names_list:
+        try:
+            ag = bot.get_command(args)
+            al = ""
+            als = ag.aliases
+            for i in range(len(als)):
+                al += (str(als[i]) + ", ")
+            tob = al.rstrip(" ,")
+            help_embed.add_field(
+                name=args,
+                value = (ag.help + "\nalt commands: " + str(tob))
+            )
+        except:
+            help_embed.add_field(
+                name=args,
+                value=bot.get_command(args).help
+            )
+            print("problem, bot?")
+
+    # If someone is just trolling:
+    else:
+        help_embed.add_field(
+            name="404",
+            value="command not found"
+        )
+    await ctx.send(embed=help_embed)
 
 
 def run_sync():
@@ -106,11 +155,11 @@ def run_sync():
         try:
             await asyncio.gather(
                 connect_ws(),
-                client.start(os.getenv('DISCORD_TOKEN'))
+                bot.start(os.getenv('DISCORD_TOKEN'))
             )
         finally:
-            if not client.is_closed():
-                await client.close()
+            if not bot.is_closed():
+                await bot.close()
 
     def stop_loop_on_completion(f):
         loop.stop()
@@ -139,10 +188,10 @@ def main_sync() -> None:
 
 
 async def main() -> None:
-    # client.run(os.getenv('DISCORD_TOKEN'))
+    # bot.run(os.getenv('DISCORD_TOKEN'))
     await asyncio.gather(
         connect_ws(),
-        client.start(os.getenv('DISCORD_TOKEN')),
+        bot.start(os.getenv('DISCORD_TOKEN')),
     )
 
 
