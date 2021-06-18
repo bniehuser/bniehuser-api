@@ -24,6 +24,7 @@ channel: Optional[GroupChannel] = None
 loop = asyncio.get_event_loop()
 client = discord.Client(loop=loop)
 owner: Optional[User] = None
+BOT_ACTIVATOR = '~';
 
 
 async def connect_ws():
@@ -43,7 +44,7 @@ async def connect_ws():
                 if channel:
                     if m.source is not SocketSource.BOT:
                         await channel.send(f"#{m.sender}: {m.message}")
-            if m.scope is SocketScope.PRIVATE:
+            elif m.scope is SocketScope.PRIVATE:
                 if owner:
                     await owner.send(f"#{m.sender}: {m.message}")
 
@@ -74,7 +75,14 @@ async def on_error(evt, *args, **kwargs):
 async def on_message(message):
     global socket
     print('[discord] message.content:', message.content)
-    if message.author != client.user and str(message.channel.id) == os.getenv('DISCORD_CHANNEL'):
+    if message.content[0] == BOT_ACTIVATOR:
+        cmd = message.content[1:]
+        if cmd == 'hello':
+            await channel.send('yo.')
+        elif cmd == 'words':
+            await channel.send(':flying_saucer: KLAATU BARADA NIKTO')
+
+    elif message.author != client.user and str(message.channel.id) == os.getenv('DISCORD_CHANNEL'):
         if not socket:
             print('[discord] no websocket connection')
         else:
