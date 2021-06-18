@@ -26,7 +26,7 @@ channel: Optional[GroupChannel] = None
 loop = asyncio.get_event_loop()
 owner: Optional[User] = None
 BOT_ACTIVATOR = '~'
-bot = commands.Bot(loop=loop, command_prefix='~')
+bot = commands.Bot(loop=loop, command_prefix='~', help_command=None)
 
 
 async def connect_ws():
