@@ -4,14 +4,14 @@ default:
 dev:
     uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-test:
-    uv run pytest
+test *ARGS:
+    uv run pytest {{ARGS}}
 
-lint:
-    uv run ruff check .
+lint *ARGS:
+    uv run ruff check {{ARGS}} .
 
-format:
-    uv run ruff format .
+format *ARGS:
+    uv run ruff format {{ARGS}} .
 
 typecheck:
     uv run pyright
