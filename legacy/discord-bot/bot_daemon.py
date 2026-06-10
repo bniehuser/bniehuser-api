@@ -16,7 +16,7 @@ import asyncio
 
 from websocket import WebSocket
 
-from .core.messaging import SocketMessage, SocketScope, SocketSource
+from .messaging import SocketMessage, SocketScope, SocketSource
 
 load_dotenv()
 

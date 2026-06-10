@@ -1,32 +1,48 @@
-[tool.poetry]
-name = "bniehuser-flask"
+[project]
+name = "bniehuser-api"
 version = "0.1.0"
-description = ""
-authors = ["Barry Niehuser <bniehuser@gmail.com>"]
+description = "FastAPI backend for bniehuser.com"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.18.4",
+    "bcrypt>=5.0.0",
+    "fastapi>=0.136.3",
+    "httpx>=0.28.1",
+    "psycopg[binary]>=3.3.4",
+    "pydantic-settings>=2.14.1",
+    "pyjwt>=2.13.0",
+    "python-multipart>=0.0.32",
+    "sqlmodel>=0.0.38",
+    "structlog>=26.1.0",
+    "uvicorn[standard]>=0.49.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.8"
-fastapi = "^0.65.1"
-uvicorn = {extras = ["standard"], version = "^0.14.0"}
-databases = "^0.4.3"
-python-jose = {extras = ["cryptography"], version = "^3.3.0"}
-passlib = "^1.7.4"
-pydantic = {extras = ["email"], version = "^1.8.2"}
-psycopg2-binary = "^2.8.6"
-python-multipart = "^0.0.5"
-bcrypt = "^3.2.0"
-yfinance = "^0.1.59"
-spoonacular = "^3.0"
-websocket-client = "^1.1.0"
-"discord.py" = "^1.7.2"
-python-dotenv = "^0.17.1"
-redis = "^3.5.3"
-gunicorn = "^20.1.0"
+[dependency-groups]
+dev = [
+    "pyright>=1.1.410",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.16",
+    "testcontainers[postgres]>=4.14.2",
+]
 
-[tool.poetry.dev-dependencies]
-python-dotenv = "^0.17.1"
-pytest = "^6.2.4"
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# `app/` is excluded during the modernization rewrite — files are
+# re-included as substeps 2/3 land them in lint-clean shape.
+# `legacy/` stays excluded permanently (deleted in substep 4).
+exclude = ["legacy", "migrations", "app"]
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+exclude = ["legacy", "migrations", ".venv"]
+# Substep 1 baseline only — strict mode comes in as files are rewritten.
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
