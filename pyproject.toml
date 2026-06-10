@@ -29,20 +29,38 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-# `app/` is excluded during the modernization rewrite — files are
-# re-included as substeps 2/3 land them in lint-clean shape.
+# Substep 2 brings the data layer (app/db.py, app/models/, app/crud/) and
+# app/core/config.py into scope. The remaining listed paths are still
+# pre-rewrite — substep 3 sweeps them and shrinks this list.
 # `legacy/` stays excluded permanently (deleted in substep 4).
-exclude = ["legacy", "migrations", "app"]
+exclude = [
+    "legacy",
+    "migrations",
+    "app/api",
+    "app/core/security.py",
+    "app/main.py",
+    "app/utils.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
 [tool.pyright]
 pythonVersion = "3.12"
-exclude = ["legacy", "migrations", ".venv"]
-# Substep 1 baseline only — strict mode comes in as files are rewritten.
+# Pre-rewrite legacy paths are excluded to match ruff scope. Substep 3
+# shrinks this list as the routers/core get rewritten.
+exclude = [
+    "legacy",
+    "migrations",
+    ".venv",
+    "app/api",
+    "app/core/security.py",
+    "app/main.py",
+    "app/utils.py",
+]
 typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
