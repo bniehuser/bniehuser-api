@@ -55,9 +55,16 @@ branch to satisfy:
 - [ ] Postgres connection composed from `PG{HOST,PORT,USER,PASSWORD,DATABASE}`
   libpq env vars (see Issue H below). **Not `DATABASE_URL`.**
 - [ ] Named secrets read from env vars matching the catalog's
-  `needs.secrets[]` list: `RAPIDAPI_KEY`, `SECRET_KEY`,
-  `FORWARD_HMAC_SECRET`, `BOT_API_TOKEN`, `BOOTSTRAP_USER_EMAIL`,
-  `BOOTSTRAP_USER_PASSWORD`. One env var per name.
+  `needs.secrets[]` list: `SECRET_KEY`, `FORWARD_HMAC_SECRET`,
+  `BOT_API_TOKEN`, `BOOTSTRAP_USER_EMAIL`, `BOOTSTRAP_USER_PASSWORD`,
+  `FINNHUB_API_KEY`, `SPOONACULAR_API_KEY`. One env var per name.
+  **Cross-repo signal:** the post-2026-06-09 external-API decisions
+  (Finnhub replaces yfinance, Spoonacular direct replaces RapidAPI)
+  add `FINNHUB_API_KEY` + `SPOONACULAR_API_KEY` and retire
+  `RAPIDAPI_KEY`. Infra catalog `needs.secrets[]` for the api program
+  must update to match before this gate item can flip green. Keyless
+  upstreams added in the same window (OpenFoodFacts, TheMealDB,
+  Open-Meteo) need no catalog change.
 
 **Out of scope for cutover:**
 

@@ -29,7 +29,10 @@ Final PR back to `main` when SPA round-trips green (substep 6).
   - Runtime: `fastapi`, `uvicorn[standard]`, `sqlmodel`,
     `psycopg[binary]`, `alembic`, `pyjwt`, `bcrypt`, `httpx`,
     `structlog`, `python-multipart`, `pydantic-settings`.
-  - Dev (`uv add --dev`): `pytest`, `pytest-asyncio`, `ruff`, `pyright`.
+  - Dev (`uv add --dev`): `pytest`, `pytest-asyncio`,
+    `testcontainers[postgres]`, `ruff`, `pyright`. (`httpx` is already
+    a runtime dep — used as `AsyncClient` in tests too, no separate
+    add.)
 - `uv.lock` (produced by `uv lock`).
 - `.python-version` containing `3.12`.
 - `Justfile` with recipes: `dev`, `test`, `lint`, `format`, `typecheck`,
@@ -79,9 +82,25 @@ Five legacy files become three:
 - `app/models/user.py`:
   - Single `class User(SQLModel, table=True): ...` — DB columns +
     pydantic validation in one class.
+  - Columns: `id`, `username`, `email` (unique), `hashed_password`,
+    `is_active`, `is_superuser`, plus three tracking dates folded in
+    at the baseline (decided 2026-06-09 — cheaper now than as a
+    follow-up migration):
+    - `created_at: datetime` —
+      `sa_column_kwargs={"server_default": text("now()")}`, immutable.
+    - `updated_at: datetime` — `server_default=text("now()")` +
+      `onupdate=func.now()` so any `UPDATE` bumps it without
+      app-side code.
+    - `last_login: datetime | None = None` — nullable; set
+      imperatively by `crud/user.py`'s `authenticate()` on success
+      (see below).
 - `app/crud/user.py`:
   - Async helpers: `get_by_email`, `create`, `authenticate`,
     `is_superuser`.
+  - `authenticate()`: on a successful password check, set
+    `user.last_login = datetime.now(UTC)` and `await session.commit()`
+    before returning. Single source of truth for the bump; the
+    endpoint stays dumb.
   - Use SA 2.x async style: `await session.exec(select(User).where(...))`.
   - Watch for SA-1-isms in the legacy `domain/user/crud.py` that don't
     translate (`db.query(...)`, sync `db.commit()` without await).
@@ -97,8 +116,15 @@ Five legacy files become three:
 ### Acceptance
 
 - `uv run alembic upgrade head` against a local postgres creates the
-  `user` table.
-- `uv run pytest` for any test that touches the user model passes.
+  `user` table with all eight columns including the three tracking
+  dates.
+- `tests/conftest.py` wires a session-scoped `testcontainers[postgres]`
+  fixture + an async DB session fixture per test (decided 2026-06-09 —
+  smoke-test-only scope, not coverage). `tests/test_user_model.py`
+  smoke-tests `crud/user.create`, `crud/user.authenticate` (asserts
+  `last_login` is bumped on success, untouched on failure), and the
+  `updated_at` auto-bump (read → mutate → re-read).
+- `uv run pytest` green.
 
 ## Substep 3: FastAPI / Pydantic v2 cascade
 
@@ -116,6 +142,10 @@ Biggest pass. Touches every router.
   `app/auth/bootstrap.py` (replaces the legacy `app/db/init_db.py`
   one-shot CLI — see Q6 in `PROJECT.md`). Idempotent; reads
   `BOOTSTRAP_USER_EMAIL` / `BOOTSTRAP_USER_PASSWORD` from env.
+- Lifespan startup also calls
+  `app.core.logging.configure_structlog()` and the
+  `RequestLoggingMiddleware` is registered ahead of CORS. See
+  `### Observability` below for shape.
 - CORS middleware: see `config.py` section below for the fix to the
   legacy char-by-char iteration bug.
 
@@ -131,10 +161,23 @@ Biggest pass. Touches every router.
   handles the dev-port range cleanly without enumerating eight URLs.
 - Libpq env vars + composed `database_url` property per `PROJECT.md`
   Issue H. **No `DATABASE_URL` field.**
-- Named secret env vars (`RAPIDAPI_KEY`, `SECRET_KEY`,
-  `FORWARD_HMAC_SECRET`, `BOT_API_TOKEN`, `BOOTSTRAP_USER_EMAIL`,
-  `BOOTSTRAP_USER_PASSWORD`) declared as `Settings` fields too — one
-  source of truth for what the app reads from env.
+- Named secret env vars declared as `Settings` fields — one source of
+  truth for what the app reads from env. Final cutover set
+  (post-2026-06-09 external-API decisions):
+  - `SECRET_KEY` — JWT signing.
+  - `FORWARD_HMAC_SECRET` — `/internal/discord/incoming` HMAC.
+  - `BOT_API_TOKEN` — outbound auth to `http://hub-bot:9000/send`.
+  - `BOOTSTRAP_USER_EMAIL`, `BOOTSTRAP_USER_PASSWORD` — lifespan
+    superuser bootstrap (Q6).
+  - `FINNHUB_API_KEY` — stocks proxy (replaces yfinance).
+  - `SPOONACULAR_API_KEY` — recipes proxy (replaces RapidAPI).
+  - **Drops** `RAPIDAPI_KEY` on this commit.
+  - Keyless upstreams (`TheMealDB`, `OpenFoodFacts`, `Open-Meteo`)
+    declare no settings field.
+  - Cross-repo signal: infra catalog `needs.secrets[]` for the api
+    program in the python-app tenant has to update to match
+    (`+FINNHUB_API_KEY`, `+SPOONACULAR_API_KEY`, `-RAPIDAPI_KEY`).
+    Captured in `PROJECT.md` completion criteria.
 - `EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = 48` — referenced by legacy
   `app/utils.py` but never declared (latent AttributeError if invoked).
   Add it while migrating to `app/auth/tokens.py`.
@@ -156,23 +199,182 @@ port before declaring substep 3 done.
   contract — healthcheck deferred fleet-wide). Still useful as a
   no-auth liveness probe for SPA/uptime checks.
 
+### `app/api/v1/api.py`
+
+Router aggregator — register the two new sub-routers added in this
+substep alongside the existing ones (auth, users, stocks, recipes,
+websocket, health):
+
+```python
+api_router.include_router(food.router,    prefix="/food",    tags=["food"])
+api_router.include_router(weather.router, prefix="/weather", tags=["weather"])
+```
+
+### `app/clients/_base.py` (new — uniform external-API surface)
+
+Substep 3 introduces an `app/clients/` package. Every external upstream
+(`finnhub`, `spoonacular`, `openfoodfacts`, `themealdb`, `open_meteo`)
+lives here as a thin `httpx.AsyncClient` wrapper. `_base.py` holds the
+shared conventions called out in `docs/backlog.md` (uniform external-API
+surface) so each per-provider client is small and consistent:
+
+- Default `httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0))`
+  with a single shared instance per provider, created at lifespan startup
+  and closed at shutdown.
+- A normalized error envelope. Upstream timeout / 5xx / non-2xx → raise
+  a small `UpstreamError` (provider, status, code, message). Endpoints
+  catch and translate to HTTP 502 with body
+  `{"detail": {"upstream": "<provider>", "code": "...", "message": "..."}}`.
+- Structured-log hook (`structlog`) — every upstream call emits
+  `{provider, method, path, status, latency_ms}` whether it succeeded
+  or failed.
+- Retry policy: **none** at this layer. Retries belong in a caching
+  layer (filed in `docs/backlog.md`). Keep clients dumb and fast.
+
+Endpoints below all delegate to these clients — no router calls `httpx`
+directly. This is the lock-in for the "uniform request/response/error
+shape regardless of upstream" principle.
+
+### Observability — `app/core/logging.py` + request middleware
+
+`structlog` is in the runtime dep set from substep 1; substep 3 wires
+it. Decided 2026-06-09 (originally backlog'd) — the cost-of-no-logs
+when the first prod thing breaks outweighs the ~30 lines of wiring.
+
+- `app/core/logging.py`:
+  - `configure_structlog()` — JSON renderer when `sys.stderr.isatty()`
+    is false, console renderer when it is. Bind `service=bniehuser-api`
+    and `version=<pyproject>` at process boot.
+  - Standard processors: `add_log_level`, `TimeStamper(fmt="iso")`,
+    `format_exc_info`, `merge_contextvars`, then the renderer.
+- `app/core/middleware.py` — `RequestLoggingMiddleware` as raw ASGI
+  middleware (not `BaseHTTPMiddleware`, which buffers streaming
+  responses). Per request:
+  - generate `request_id = uuid4().hex[:12]`,
+  - bind it via `structlog.contextvars.bind_contextvars(request_id=...)`
+    so every log line inside the request inherits it,
+  - on completion emit
+    `{event="request", request_id, method, path, status, latency_ms}`.
+  - Wire it in `app/main.py` *before* CORS so preflight OPTIONS
+    requests also get logged.
+- The upstream-call log line from `app/clients/_base.py` automatically
+  inherits `request_id` via the contextvar binding, so an upstream
+  failure is greppable back to the originating request.
+
+No log-destination wiring here — stdout/stderr is the contract with
+`hub-python`'s supervisord, which captures both.
+
 ### `app/api/v1/endpoints/stocks.py`
 
-- Biggest pydantic v2 surgery. Current code defines `Stock(BaseModel)` with
-  `__init__(self, **kw)` that remaps Yahoo's PascalCase keys to snake_case.
-  v2 breaks this — `__init__` doesn't run during validation.
-- Replace with `@model_validator(mode='before') @classmethod def _remap(cls, data): ...`
-  that does the same key transform before validation.
-- yfinance call: wrap in `httpx.AsyncClient` if it's currently sync. If
-  yfinance is sync-only, run via `asyncio.to_thread`.
+**Decided 2026-06-09:** swap yfinance for Finnhub as the primary
+upstream. Rationale in `docs/backlog.md` (research output landed at
+`~/research/2026-06-09-free-public-apis/`). yfinance was the original
+fragility flag motivating the modernization; Finnhub is real REST
+(not Yahoo scraping), free-tier 60 req/min, US equities + crypto + FX
++ fundamentals + WebSocket from one key.
+
+- New `app/clients/finnhub.py` — thin `httpx.AsyncClient` wrapper around
+  `https://finnhub.io/api/v1/`. Auth is `?token=<FINNHUB_API_KEY>` query
+  param. Methods needed for the current SPA contract: `quote(symbol)`,
+  `profile(symbol)`, `candles(symbol, resolution, from_, to)`. Mirror
+  the existing `/stocks/{ticker}` response shape so the SPA codegen
+  doesn't churn — Finnhub's JSON gets normalized in the client, the
+  endpoint returns the same `Stock` model.
+- `Stock(BaseModel)` keeps the v2 surgery (the upstream now has its own
+  key naming; the `@model_validator(mode='before')` handles the
+  Finnhub → bniehuser remap instead of the Yahoo PascalCase remap).
+- Drop `yfinance` from `pyproject.toml`. Drop `import yfinance` from
+  the endpoint.
+- API key from `settings.FINNHUB_API_KEY` (SSM-sourced — needs adding
+  to infra catalog `needs.secrets[]`; see `PROJECT.md` completion
+  criteria).
+- **Backlog seed** (file in `docs/backlog.md` if not already there):
+  Finnhub also exposes a WebSocket trades stream and a news endpoint.
+  Both are real extensions to the proxy surface, not part of this
+  cutover.
 
 ### `app/api/v1/endpoints/recipes.py`
 
-- Drop the `spoonacular` SDK dep entirely.
-- Replace with `app/clients/spoonacular.py` — thin `httpx.AsyncClient`
-  wrapper against `https://spoonacular-recipe-food-nutrition-v1.p.rapidapi.com/`.
-- API key from `settings.RAPIDAPI_KEY` (SSM-sourced).
-- Same v2 model treatment as stocks if the upstream JSON needs key remapping.
+Primary upstream stays Spoonacular, but moves off RapidAPI to direct
+`api.spoonacular.com`. Substep 3 also lands two layered free
+complements identified in the 2026-06-09 research:
+
+- **Spoonacular** (primary, key-gated):
+  - Drop the `spoonacular` SDK dep entirely.
+  - New `app/clients/spoonacular.py` — `httpx.AsyncClient` against
+    `https://api.spoonacular.com/`. Auth is `?apiKey=<key>` per
+    Spoonacular's REST contract.
+  - API key from `settings.SPOONACULAR_API_KEY` (SSM-sourced). Retire
+    `RAPIDAPI_KEY` on the same commit.
+  - Free tier is ~150 points/day direct vs ~50/day on RapidAPI free,
+    and removes the RapidAPI middleman quota/auth header.
+- **TheMealDB** (keyless complement — ethnic cuisine breadth):
+  - New `app/clients/themealdb.py` — `httpx.AsyncClient` against
+    `https://www.themealdb.com/api/json/v1/1/`. Keyless on the public
+    `v1/1` path.
+  - Used inside `/recipes/search`: Spoonacular primary, TheMealDB
+    augments results with ethnic-cuisine matches (Asian, Latin,
+    Middle Eastern) where Spoonacular's Western bias falls thin. The
+    bniehuser-side response shape stays Spoonacular's — TheMealDB
+    results are normalized into the same model.
+  - Also useful as a quota-exhaustion fallback (if Spoonacular returns
+    402 / daily quota hit, serve TheMealDB-only results with a
+    `partial: true` flag in the envelope).
+- **TheMealDB** is the only complement used *inside* `/recipes/*`.
+  OpenFoodFacts answers a different question (product lookup, not
+  recipe search), so it lives in its own router — see
+  `app/api/v1/endpoints/food.py` below.
+
+Same model-validator pattern (`@model_validator(mode='before')`) as
+`stocks.py` for any upstream that needs key remapping.
+
+### `app/api/v1/endpoints/food.py` (NEW)
+
+Sibling to `/recipes/*` — answers "what is this product?" rather than
+"find me a recipe." OpenFoodFacts is the only free barcode lookup
+identified in the 2026-06-09 research, so this is a unique surface
+with no overlap to Spoonacular.
+
+- New `app/clients/openfoodfacts.py` — `httpx.AsyncClient` against
+  `https://world.openfoodfacts.org/api/v2/`. Keyless, but the project
+  asks consumers to send a descriptive `User-Agent`
+  (`bniehuser-api/<version> (https://bniehuser.com)`). Wire that in
+  the client default headers.
+- New endpoint **`GET /api/v1/food/barcode/{barcode}`** — returns
+  product name, brand, ingredients, allergens, nutriments, Nutri-Score,
+  image URL. 404 if the barcode is unknown to OpenFoodFacts.
+- Same v2 model treatment if the upstream JSON needs key remapping.
+
+### `app/api/v1/endpoints/weather.py` (NEW)
+
+**Decided 2026-06-09:** Open-Meteo lands as the highest-impact new
+proxy surface in the modernization cutover. Selected from the research
+shortlist for: zero auth (no SSM plumbing), one provider covering many
+sub-surfaces (current + forecast + AQI + marine + ERA5 historical),
+universal appeal (both SPA and bot consumers benefit), 10k req/day
+free pool, low integration effort, composes forward with a future
+geocoding addition.
+
+- New `app/clients/open_meteo.py` — `httpx.AsyncClient` against
+  `https://api.open-meteo.com/v1/` (and `air-quality-api.open-meteo.com`,
+  `marine-api.open-meteo.com`, `archive-api.open-meteo.com` for the
+  sibling surfaces). Keyless.
+- New endpoints (cutover scope — current + forecast only; AQI / marine
+  / historical filed as `docs/backlog.md` extensions):
+  - **`GET /api/v1/weather/current?lat=&lon=`** — temperature, apparent
+    temperature, humidity, wind, weather code, sunrise/sunset.
+  - **`GET /api/v1/weather/forecast?lat=&lon=&days=`** — daily forecast
+    (default 7 days, max 16 per Open-Meteo limits).
+- Inputs: `lat: float`, `lon: float`, validated `-90..90` / `-180..180`
+  via pydantic v2 `Field(ge=..., le=...)`. No city-name lookup in the
+  cutover — that requires a geocoding upstream, deferred to backlog.
+- Output models normalize Open-Meteo's structured JSON
+  (`current_weather`, `daily[...]`) into a flat bniehuser shape. Same
+  `@model_validator(mode='before')` pattern as stocks/recipes.
+- **Backlog seed**: extend with `/weather/air-quality`,
+  `/weather/marine`, `/weather/historical`, and a `/location/geocode`
+  upstream (LocationIQ or Nominatim — see research report) so the
+  weather endpoints accept city names instead of raw lat/lon.
 
 ### `app/api/v1/endpoints/auth.py`
 
@@ -239,17 +441,45 @@ Behavioral change biggest here:
 
 ### Acceptance
 
+- `tests/` has a smoke test per router using `httpx.AsyncClient`
+  against the FastAPI app: `test_health`, `test_auth_login`,
+  `test_users_me`, `test_stocks_quote` (Finnhub client mocked),
+  `test_recipes_search` (Spoonacular mocked), `test_food_barcode`
+  (OpenFoodFacts mocked), `test_weather_current` (Open-Meteo
+  mocked), `test_websocket_origin_reject`. Goal: every router has
+  one happy-path test + the one explicit security check
+  (origin-rejection). Not coverage — wiring proof.
+- A request to any route emits exactly one structured log line at
+  completion carrying `request_id`, `method`, `path`, `status`,
+  `latency_ms`. Inspecting the same line for an external-API proxy
+  call also shows the nested upstream-client log carrying the same
+  `request_id`.
 - `uv run pytest` green for all tests that don't require an external
   bot.
 - `uv run uvicorn app.main:app` starts cleanly locally.
 - `curl http://localhost:8000/api/v1/health` → 200.
 - `curl http://localhost:8000/api/v1/openapi.json` returns the schema
   and every route in it lives under `/api/v1/*`.
+- Manual: `GET /api/v1/stocks/AAPL` returns a `Stock` payload sourced
+  from Finnhub (not yfinance — verify by inspecting the client log
+  line).
+- Manual: `GET /api/v1/recipes/search?q=pizza` returns Spoonacular
+  results; `GET /api/v1/recipes/search?q=biryani` includes
+  TheMealDB-augmented results in the same envelope.
+- Manual: `GET /api/v1/food/barcode/3017620422003` (Nutella) returns
+  product data from OpenFoodFacts.
+- Manual: `GET /api/v1/weather/current?lat=47.6&lon=-122.3` returns
+  current Seattle conditions from Open-Meteo;
+  `GET /api/v1/weather/forecast?lat=47.6&lon=-122.3&days=3` returns
+  a 3-day forecast.
 - Manual: POST a HMAC-signed payload to
   `/api/v1/internal/discord/incoming` (signature per Issue K),
   observe fan-out to a connected WS client.
 - Manual: open a WS connection without an allowed `Origin` header,
   observe handshake rejection (Issue E layer 1).
+- Inspect a structured log line for any upstream call and verify it
+  carries `provider`, `path`, `status`, `latency_ms` per the
+  `app/clients/_base.py` convention.
 
 ## Substep 4: Bot code cleanup
 
