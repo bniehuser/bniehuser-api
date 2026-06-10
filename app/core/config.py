@@ -1,13 +1,12 @@
-import secrets
-
+from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # libpq env vars — the deployed runtime injects these directly; local
-    # `.env` mirrors the same shape. `database_url` is composed below.
+    app_name: str = "bniehuser.com API"
+
     PGHOST: str = "localhost"
     PGPORT: int = 5432
     PGUSER: str = "postgres"
@@ -21,15 +20,35 @@ class Settings(BaseSettings):
             f"@{self.PGHOST}:{self.PGPORT}/{self.PGDATABASE}"
         )
 
-    app_name: str = "bniehuser.com API"
-    SECRET_KEY: str = secrets.token_urlsafe(32)
-    BACKEND_CORS_ORIGINS: str | None = "localhost:*"
-    FIRST_SUPERUSER: str = "barry@bniehuser.com"
-    FIRST_SUPERUSER_USERNAME: str = "barry"
-    FIRST_SUPERUSER_PASSWORD: str = "test"
-    USERS_OPEN_REGISTRATION: bool = True
+    SECRET_KEY: str = "dev-insecure-change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
-    RAPIDAPI_KEY: str | None = None
+    EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = 48
+
+    FORWARD_HMAC_SECRET: str = "dev-hmac-change-me"
+    BOT_API_TOKEN: str = "dev-bot-token-change-me"
+
+    BOOTSTRAP_USER_EMAIL: str = "barry@bniehuser.com"
+    BOOTSTRAP_USER_PASSWORD: str = "change-me"
+
+    FINNHUB_API_KEY: str | None = None
+    SPOONACULAR_API_KEY: str | None = None
+
+    USERS_OPEN_REGISTRATION: bool = True
+
+    BACKEND_CORS_ORIGINS: list[AnyHttpUrl] = []
+    BACKEND_CORS_ORIGIN_REGEX: str = r"^http://localhost:51(7[3-9]|80)$"
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def _split_cors(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("["):
+                return v
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
 
 settings = Settings()

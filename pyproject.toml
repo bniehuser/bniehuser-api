@@ -10,6 +10,7 @@ dependencies = [
     "httpx>=0.28.1",
     "psycopg[binary]>=3.3.4",
     "pydantic-settings>=2.14.1",
+    "pydantic[email]>=2.13.4",
     "pyjwt>=2.13.0",
     "python-multipart>=0.0.32",
     "sqlmodel>=0.0.38",
@@ -29,17 +30,16 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-# Substep 2 brings the data layer (app/db.py, app/models/, app/crud/) and
-# app/core/config.py into scope. The remaining listed paths are still
-# pre-rewrite — substep 3 sweeps them and shrinks this list.
-# `legacy/` stays excluded permanently (deleted in substep 4).
+# Substep 3a sweeps core/auth/users/health into scope. stocks/recipes/websocket
+# stay parked until 3b rewrites them with the new clients package.
+# `legacy/` and `migrations/` stay excluded permanently.
 exclude = [
     "legacy",
     "migrations",
-    "app/api",
-    "app/core/security.py",
-    "app/main.py",
-    "app/utils.py",
+    "app/api/v1/endpoints/stocks.py",
+    "app/api/v1/endpoints/recipes.py",
+    "app/api/v1/endpoints/websocket.py",
+    "app/core/messaging.py",
 ]
 
 [tool.ruff.lint]
@@ -47,16 +47,14 @@ select = ["E", "F", "W", "I"]
 
 [tool.pyright]
 pythonVersion = "3.12"
-# Pre-rewrite legacy paths are excluded to match ruff scope. Substep 3
-# shrinks this list as the routers/core get rewritten.
 exclude = [
     "legacy",
     "migrations",
     ".venv",
-    "app/api",
-    "app/core/security.py",
-    "app/main.py",
-    "app/utils.py",
+    "app/api/v1/endpoints/stocks.py",
+    "app/api/v1/endpoints/recipes.py",
+    "app/api/v1/endpoints/websocket.py",
+    "app/core/messaging.py",
 ]
 typeCheckingMode = "basic"
 

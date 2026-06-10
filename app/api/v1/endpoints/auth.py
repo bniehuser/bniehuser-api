@@ -1,97 +1,71 @@
 from datetime import timedelta
-from typing import Any
+from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from ....domain.user import crud, models, schemas
-from ....api import deps
-from ....core import security
-from ....core.config import settings
-from ....core.security import get_password_hash
-from ....utils import (
-    generate_password_reset_token,
-    # send_reset_password_email,
-    verify_password_reset_token,
-)
-from ...schemas import Token, Msg
+from app.auth.tokens import generate_password_reset_token, verify_password_reset_token
+from app.core.config import settings
+from app.core.security import create_access_token
+from app.crud import user as crud_user
+from app.db import get_session
+from app.schemas.auth import Msg, Token
 
 router = APIRouter()
 
 
 @router.post("/login/access-token", response_model=Token)
-def login_access_token(
-        db: Session = Depends(deps.get_db), form_data: OAuth2PasswordRequestForm = Depends()
-) -> Any:
-    """
-    OAuth2 compatible token login, get an access token for future requests
-    """
-    user = crud.user.authenticate(
-        db, email=form_data.username, password=form_data.password
+async def login_access_token(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+) -> Token:
+    user = await crud_user.authenticate(
+        session, email=form_data.username, password=form_data.password
     )
-    if not user:
+    if user is None:
         raise HTTPException(status_code=400, detail="Incorrect email or password")
-    elif not crud.user.is_active(user):
+    if not crud_user.is_active(user):
         raise HTTPException(status_code=400, detail="Inactive user")
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    return {
-        "access_token": security.create_access_token(
-            user.id, expires_delta=access_token_expires
-        ),
-        "token_type": "bearer",
-    }
+    assert user.id is not None
+    token = create_access_token(
+        user.id, expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    return Token(access_token=token, token_type="bearer")
 
 
-@router.post("/login/test-token", response_model=schemas.User)
-def test_token(current_user: models.User = Depends(deps.get_current_user)) -> Any:
-    """
-    Test access token
-    """
-    return current_user
-
-
-@router.post("/password-recovery/{email}", response_model=Msg)
-def recover_password(email: str, db: Session = Depends(deps.get_db)) -> Any:
-    """
-    Password Recovery
-    """
-    user = crud.user.get_by_email(db, email=email)
-
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="The user with this username does not exist in the system.",
-        )
-    password_reset_token = generate_password_reset_token(email=email)
-    # send_reset_password_email(
-    #     email_to=user.email, email=email, token=password_reset_token
-    # )
-    return {"msg": f"reset token: {password_reset_token}"}
+@router.post(
+    "/password-recovery/{email}",
+    response_model=Msg,
+    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+)
+async def recover_password(
+    email: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Msg:
+    user = await crud_user.get_by_email(session, email=email)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    generate_password_reset_token(email=email)
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Password reset email delivery is not yet configured.",
+    )
 
 
 @router.post("/reset-password/", response_model=Msg)
-def reset_password(
-        token: str = Body(...),
-        new_password: str = Body(...),
-        db: Session = Depends(deps.get_db),
-) -> Any:
-    """
-    Reset password
-    """
+async def reset_password(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    token: Annotated[str, Body(...)],
+    new_password: Annotated[str, Body(...)],
+) -> Msg:
     email = verify_password_reset_token(token)
-    if not email:
+    if email is None:
         raise HTTPException(status_code=400, detail="Invalid token")
-    user = crud.user.get_by_email(db, email=email)
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="The user with this username does not exist in the system.",
-        )
-    elif not crud.user.is_active(user):
+    user = await crud_user.get_by_email(session, email=email)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if not crud_user.is_active(user):
         raise HTTPException(status_code=400, detail="Inactive user")
-    hashed_password = get_password_hash(new_password)
-    user.hashed_password = hashed_password
-    db.add(user)
-    db.commit()
-    return {"msg": "Password updated successfully"}
+    await crud_user.update_password(session, user=user, new_password=new_password)
+    return Msg(msg="Password updated successfully")
