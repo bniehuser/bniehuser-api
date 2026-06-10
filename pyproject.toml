@@ -30,32 +30,14 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-# Substep 3a sweeps core/auth/users/health into scope. stocks/recipes/websocket
-# stay parked until 3b rewrites them with the new clients package.
-# `legacy/` and `migrations/` stay excluded permanently.
-exclude = [
-    "legacy",
-    "migrations",
-    "app/api/v1/endpoints/stocks.py",
-    "app/api/v1/endpoints/recipes.py",
-    "app/api/v1/endpoints/websocket.py",
-    "app/core/messaging.py",
-]
+exclude = ["legacy", "migrations"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
 [tool.pyright]
 pythonVersion = "3.12"
-exclude = [
-    "legacy",
-    "migrations",
-    ".venv",
-    "app/api/v1/endpoints/stocks.py",
-    "app/api/v1/endpoints/recipes.py",
-    "app/api/v1/endpoints/websocket.py",
-    "app/core/messaging.py",
-]
+exclude = ["legacy", "migrations", ".venv"]
 typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]

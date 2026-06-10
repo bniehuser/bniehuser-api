@@ -1,71 +1,66 @@
-from typing import List, Optional
+from typing import Any
 
-from fastapi import APIRouter, HTTPException
-import yfinance as yf
-from pydantic import BaseModel
+from fastapi import APIRouter
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from app.clients import finnhub
+from app.clients._base import with_upstream
+from app.clients.pool import get as get_client
 
 router = APIRouter()
 
 
-class StockPeriod(BaseModel):
-    open: float
-    close: float
+class Stock(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    symbol: str
+    name: str | None = None
+    exchange: str | None = None
+    industry: str | None = None
+    logo_url: str | None = None
+    currency: str | None = None
+    price: float
+    change: float
+    change_percent: float
     high: float
     low: float
-    volume: int
-    dividends: float
-    splits: int
+    open: float
+    previous_close: float
+    timestamp: int
 
-    def __init__(self, **kwargs):
-        kwargs['open'] = kwargs['Open']
-        kwargs['close'] = kwargs['Close']
-        kwargs['high'] = kwargs['High']
-        kwargs['low'] = kwargs['Low']
-        kwargs['volume'] = kwargs['Volume']
-        kwargs['dividends'] = kwargs['Dividends']
-        kwargs['splits'] = kwargs['Stock Splits']
-        super().__init__(**kwargs)
-
-
-class Stock(BaseModel):
-    symbol: str
-    name: Optional[str]
-    name_short: str
-    sector: Optional[str]
-    industry: Optional[str]
-    logo_url: str
-    history_period: str
-    history: List[StockPeriod]
-    price: Optional[float]
-    change: float
-
-    def __init__(self, **kwargs):
-        kwargs['name'] = kwargs['longName']
-        kwargs['name_short'] = kwargs['shortName']
-        kwargs['price'] = kwargs['regularMarketPrice']
-        super().__init__(**kwargs)
+    @model_validator(mode="before")
+    @classmethod
+    def _remap(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        quote = data.get("quote", {})
+        profile = data.get("profile", {})
+        return {
+            "symbol": data.get("symbol") or profile.get("ticker", ""),
+            "name": profile.get("name"),
+            "exchange": profile.get("exchange"),
+            "industry": profile.get("finnhubIndustry"),
+            "logo_url": profile.get("logo"),
+            "currency": profile.get("currency"),
+            "price": quote.get("c"),
+            "change": quote.get("d"),
+            "change_percent": quote.get("dp"),
+            "high": quote.get("h"),
+            "low": quote.get("l"),
+            "open": quote.get("o"),
+            "previous_close": quote.get("pc"),
+            "timestamp": quote.get("t"),
+        }
 
 
-@router.get('/{ticker}', response_model=Stock)
-async def get_ticker(ticker: str):
-    t = yf.Ticker(ticker)
-    if 'symbol' not in t.info:
-        raise HTTPException(status_code=404, detail='Ticker Not Found')
+@router.get("/{ticker}", response_model=Stock)
+async def get_stock(ticker: str) -> Stock:
+    client = get_client("finnhub")
+    symbol = ticker.upper()
 
-    h = t.history(period='30d').to_dict('records')
-    info = {key: (t.info[key] if key in t.info else None) for key in ['sector', 'industry', 'regularMarketPrice', 'symbol', 'shortName', 'longName', 'logo_url']}
-    return {
-        **info,
-        'history': h,
-        'history_period': '1d',
-        'change': h[-1]['Close']-h[-2]['Close'] if len(h) > 1 else 0
-    }
+    async def fetch() -> Stock:
+        quote = await finnhub.quote(client, symbol)
+        profile = await finnhub.profile(client, symbol)
+        return Stock.model_validate({"symbol": symbol, "quote": quote, "profile": profile})
 
-
-@router.get('/{ticker}/history/{period}/{interval}', response_model=List[StockPeriod])
-async def get_ticker(ticker: str, period: str, interval: str):
-    t = yf.Ticker(ticker)
-    if 'symbol' not in t.info:
-        raise HTTPException(status_code=404, detail='Ticker Not Found')
-
-    return t.history(period=period, interval=interval).to_dict('records')
+    return await with_upstream(fetch)

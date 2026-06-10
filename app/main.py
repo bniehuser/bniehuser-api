@@ -6,6 +6,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
 from app.auth.bootstrap import create_superuser_if_missing
+from app.clients import pool as client_pool
 from app.core.config import settings
 from app.core.logging import configure_structlog
 from app.core.middleware import RequestLoggingMiddleware
@@ -16,9 +17,11 @@ log = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_structlog()
+    await client_pool.open_all()
     await create_superuser_if_missing()
     log.info("startup_complete")
     yield
+    await client_pool.close_all()
     log.info("shutdown_complete")
 
 

@@ -46,3 +46,12 @@ async def session() -> AsyncGenerator:
 
     async with async_session() as s:
         yield s
+
+
+@pytest.fixture(autouse=True)
+async def _open_client_pool() -> AsyncGenerator[None, None]:
+    from app.clients import pool
+
+    await pool.open_all()
+    yield
+    await pool.close_all()
