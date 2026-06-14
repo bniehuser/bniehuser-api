@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import re
-import time
 from enum import Enum
 from typing import Annotated
 
@@ -15,15 +14,14 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.core.config import settings
 
 log = structlog.get_logger()
 router = APIRouter()
 
-REPLAY_WINDOW_SECONDS = 300
-HUB_BOT_URL = "http://hub-bot:9000/send"
+SEND_URL = settings.DISCORD_BOT_URL.rstrip("/") + "/send"
 
 
 class SocketScope(str, Enum):
@@ -131,11 +129,18 @@ class IncomingDiscordPayload(BaseModel):
     sender: str
     message: str
 
+    @field_validator("scope", mode="before")
+    @classmethod
+    def _normalize_scope(cls, v: object) -> object:
+        # discord-bot fans out an UPPERCASE scope; SocketScope values are lower.
+        return v.lower() if isinstance(v, str) else v
 
-def _verify_signature(*, timestamp: str, body: bytes, signature: str) -> bool:
+
+def _verify_signature(*, body: bytes, signature: str) -> bool:
+    # Matches discord-bot/bot/forwards.py: "sha256=" + HMAC(secret, body).
     expected_hex = hmac.new(
         settings.FORWARD_HMAC_SECRET.encode(),
-        f"{timestamp}.".encode() + body,
+        body,
         hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(f"sha256={expected_hex}", signature)
@@ -144,21 +149,12 @@ def _verify_signature(*, timestamp: str, body: bytes, signature: str) -> bool:
 @router.post("/internal/discord/incoming")
 async def incoming_discord(
     request: Request,
-    x_forward_timestamp: Annotated[str | None, Header(alias="X-Forward-Timestamp")] = None,
-    x_forward_signature: Annotated[str | None, Header(alias="X-Forward-Signature")] = None,
+    x_bot_signature: Annotated[str | None, Header(alias="X-Bot-Signature")] = None,
 ) -> dict[str, str]:
-    if x_forward_timestamp is None or x_forward_signature is None:
-        raise HTTPException(status_code=400, detail="Missing forwarding headers")
-    try:
-        ts = int(x_forward_timestamp)
-    except ValueError as err:
-        raise HTTPException(status_code=400, detail="Bad timestamp") from err
-    if abs(int(time.time()) - ts) > REPLAY_WINDOW_SECONDS:
-        raise HTTPException(status_code=400, detail="Stale timestamp")
+    if x_bot_signature is None:
+        raise HTTPException(status_code=400, detail="Missing signature header")
     body = await request.body()
-    if not _verify_signature(
-        timestamp=x_forward_timestamp, body=body, signature=x_forward_signature
-    ):
+    if not _verify_signature(body=body, signature=x_bot_signature):
         raise HTTPException(status_code=401, detail="Invalid signature")
     try:
         data = IncomingDiscordPayload.model_validate_json(body)
@@ -176,11 +172,12 @@ async def incoming_discord(
 
 
 async def discord_outbound(scope: SocketScope, message: str, sender: str = "web") -> None:
-    payload = {"scope": scope.value, "sender": sender, "message": message}
+    # discord-bot's /send expects an UPPERCASE scope ("PUBLIC"/"PRIVATE").
+    payload = {"scope": scope.value.upper(), "sender": sender, "message": message}
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             await client.post(
-                HUB_BOT_URL,
+                SEND_URL,
                 json=payload,
                 headers={"Authorization": f"Bearer {settings.BOT_API_TOKEN}"},
             )

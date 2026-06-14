@@ -1,6 +1,5 @@
 import hashlib
 import hmac
-import time
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -255,23 +254,23 @@ async def test_weather_lat_out_of_range(client: AsyncClient) -> None:
     assert resp.status_code == 422
 
 
-def _sign(secret: str, ts: str, body: bytes) -> str:
-    digest = hmac.new(secret.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+def _sign(secret: str, body: bytes) -> str:
+    # Matches discord-bot/bot/forwards.py: body-only HMAC, no timestamp.
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return f"sha256={digest}"
 
 
 async def test_discord_incoming_ok(client: AsyncClient) -> None:
     from app.core.config import settings
 
-    body = b'{"scope":"public","sender":"alice","message":"hi"}'
-    ts = str(int(time.time()))
-    sig = _sign(settings.FORWARD_HMAC_SECRET, ts, body)
+    # Bot fans out an UPPERCASE scope; the endpoint normalizes it.
+    body = b'{"scope":"PUBLIC","sender":"alice","message":"hi"}'
+    sig = _sign(settings.FORWARD_HMAC_SECRET, body)
     resp = await client.post(
         "/api/v1/internal/discord/incoming",
         content=body,
         headers={
-            "X-Forward-Timestamp": ts,
-            "X-Forward-Signature": sig,
+            "X-Bot-Signature": sig,
             "Content-Type": "application/json",
         },
     )
@@ -279,33 +278,13 @@ async def test_discord_incoming_ok(client: AsyncClient) -> None:
 
 
 async def test_discord_incoming_bad_signature(client: AsyncClient) -> None:
-    body = b'{"scope":"public","sender":"x","message":"hi"}'
-    ts = str(int(time.time()))
+    body = b'{"scope":"PUBLIC","sender":"x","message":"hi"}'
     resp = await client.post(
         "/api/v1/internal/discord/incoming",
         content=body,
         headers={
-            "X-Forward-Timestamp": ts,
-            "X-Forward-Signature": "sha256=deadbeef",
+            "X-Bot-Signature": "sha256=deadbeef",
             "Content-Type": "application/json",
         },
     )
     assert resp.status_code == 401
-
-
-async def test_discord_incoming_stale_timestamp(client: AsyncClient) -> None:
-    from app.core.config import settings
-
-    body = b'{"scope":"public","sender":"x","message":"hi"}'
-    ts = str(int(time.time()) - 3600)
-    sig = _sign(settings.FORWARD_HMAC_SECRET, ts, body)
-    resp = await client.post(
-        "/api/v1/internal/discord/incoming",
-        content=body,
-        headers={
-            "X-Forward-Timestamp": ts,
-            "X-Forward-Signature": sig,
-            "Content-Type": "application/json",
-        },
-    )
-    assert resp.status_code == 400

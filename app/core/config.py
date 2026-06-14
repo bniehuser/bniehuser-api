@@ -26,6 +26,9 @@ class Settings(BaseSettings):
 
     FORWARD_HMAC_SECRET: str = "dev-hmac-change-me"
     BOT_API_TOKEN: str = "dev-bot-token-change-me"
+    # Cross-tenant URL of the discord-bot service; catalog wires this to
+    # http://python:8001 (shared-container name, see infra sites.yaml).
+    DISCORD_BOT_URL: str = "http://python:8001"
 
     BOOTSTRAP_USER_EMAIL: str = "barry@bniehuser.com"
     BOOTSTRAP_USER_PASSWORD: str = "change-me"
