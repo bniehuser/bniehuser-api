@@ -1,11 +1,12 @@
 import httpx
 
-from . import finnhub, open_meteo, openfoodfacts, spoonacular, themealdb
+from . import finnhub, open_meteo, openfoodfacts, spoonacular, themealdb, twelvedata
 
 _clients: dict[str, httpx.AsyncClient] = {}
 
 _FACTORIES = {
     "finnhub": finnhub.make,
+    "twelvedata": twelvedata.make,
     "spoonacular": spoonacular.make,
     "themealdb": themealdb.make,
     "openfoodfacts": openfoodfacts.make,

@@ -1,9 +1,9 @@
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.clients import finnhub
+from app.clients import finnhub, twelvedata
 from app.clients._base import with_upstream
 from app.clients.pool import get as get_client
 
@@ -53,6 +53,15 @@ class Stock(BaseModel):
         }
 
 
+class Candle(BaseModel):
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
 @router.get("/{ticker}", response_model=Stock)
 async def get_stock(ticker: str) -> Stock:
     client = get_client("finnhub")
@@ -62,5 +71,35 @@ async def get_stock(ticker: str) -> Stock:
         quote = await finnhub.quote(client, symbol)
         profile = await finnhub.profile(client, symbol)
         return Stock.model_validate({"symbol": symbol, "quote": quote, "profile": profile})
+
+    return await with_upstream(fetch)
+
+
+@router.get("/{ticker}/history", response_model=list[Candle])
+async def get_stock_history(
+    ticker: str,
+    interval: str = Query("1day"),
+    outputsize: int = Query(30, ge=1, le=5000),
+) -> list[Candle]:
+    client = get_client("twelvedata")
+    symbol = ticker.upper()
+
+    async def fetch() -> list[Candle]:
+        data = await twelvedata.time_series(client, symbol, interval, outputsize)
+        values = data.get("values", [])
+        candles = [
+            Candle(
+                date=v["datetime"],
+                open=float(v["open"]),
+                high=float(v["high"]),
+                low=float(v["low"]),
+                close=float(v["close"]),
+                volume=int(v.get("volume") or 0),
+            )
+            for v in values
+        ]
+        # Twelve Data returns descending by date — reverse to ascending for charting.
+        candles.reverse()
+        return candles
 
     return await with_upstream(fetch)

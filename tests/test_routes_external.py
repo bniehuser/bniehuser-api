@@ -65,6 +65,58 @@ async def test_stocks_quote_upstream_error_becomes_502(
     assert body["detail"]["upstream"] == "finnhub"
 
 
+async def test_stocks_history_ascending(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_time_series(_c, _symbol: str, _interval: str, _outputsize: int) -> dict:
+        return {
+            "meta": {"symbol": "AAPL", "interval": "1day"},
+            "values": [
+                {
+                    "datetime": "2026-06-12",
+                    "open": "197.0",
+                    "high": "199.0",
+                    "low": "196.0",
+                    "close": "198.5",
+                    "volume": "50000000",
+                },
+                {
+                    "datetime": "2026-06-11",
+                    "open": "195.0",
+                    "high": "197.0",
+                    "low": "194.0",
+                    "close": "196.0",
+                    "volume": "42000000",
+                },
+            ],
+        }
+
+    monkeypatch.setattr("app.api.v1.endpoints.stocks.twelvedata.time_series", fake_time_series)
+    resp = await client.get("/api/v1/stocks/aapl/history")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 2
+    # reversed to ascending date order
+    assert body[0]["date"] == "2026-06-11"
+    assert body[1]["date"] == "2026-06-12"
+    assert body[1]["close"] == 198.5
+    assert body[0]["volume"] == 42000000
+
+
+async def test_stocks_history_upstream_error_becomes_502(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.clients._base import UpstreamError
+
+    async def boom(*_a, **_kw):
+        raise UpstreamError(provider="twelvedata", status=429, code="upstream_4xx", message="rate")
+
+    monkeypatch.setattr("app.api.v1.endpoints.stocks.twelvedata.time_series", boom)
+    resp = await client.get("/api/v1/stocks/aapl/history")
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["upstream"] == "twelvedata"
+
+
 async def test_recipes_search_merges_sources(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     BOOTSTRAP_USER_PASSWORD: str = "change-me"
 
     FINNHUB_API_KEY: str | None = None
+    TWELVEDATA_API_KEY: str | None = None
     SPOONACULAR_API_KEY: str | None = None
 
     USERS_OPEN_REGISTRATION: bool = True
