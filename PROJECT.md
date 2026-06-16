@@ -5,6 +5,28 @@ can deploy as the first python-app tenant of `hub-python` on the hub. Six
 sequential passes on a `modernize-2026` branch; PR to `main` when SPA
 round-trips green.
 
+## Phase-4 pivot (2026-06-15) — api sheds its messaging role
+
+Per the relay session's cutover memo (`memos/c8gmkr89Zs4MgvwmBNbwHM`), relay
+Phase 4 moves to a broker/edge architecture and a new `relay-edge-web` tenant
+takes over the web↔discord chat surface in both directions. **api becomes a
+pure, agnostic internal data resource and never speaks to discord again.**
+Decision (ours, per memo §C): **clean split** — api is fully out of chat.
+
+Done in this repo: deleted `app/api/v1/endpoints/websocket.py` whole (the
+`/internal/discord/incoming` HMAC receiver, `discord_outbound()`, the
+`/ws/{client_id}` endpoint + `ConnectionManager` + `SocketMessage`); dropped
+the websocket router include; dropped settings `FORWARD_HMAC_SECRET`,
+`BOT_API_TOKEN`, `DISCORD_BOT_URL`. This **supersedes substep 3's websocket
+bridge** (never lands — the path is deleted, not rebuilt) and front-runs
+**substep 4** (the runtime messaging role is gone now).
+
+Open follow-ups: (a) react repoints its chat ws to relay-edge-web (react repo);
+(b) relay-edge-web auth — decided to **share api's existing JWT** (relayed to
+the relay session); (c) `legacy/discord-bot/` + `docs/discord-bot-port.md` stay
+until relay cutover, then delete (substep 4). The public-interface downtime
+infra flagged is their Phase-4 port reallocation, not a code fault here.
+
 ## Substeps
 
 1. **Tooling baseline** — replace Poetry with `uv`, pin Python 3.12, add
@@ -18,14 +40,15 @@ round-trips green.
    URL composed from libpq env vars per Issue H.
 3. **FastAPI / Pydantic v2 cascade** — lifespan replaces on_event;
    pydantic_settings; pyjwt replaces python-jose; bcrypt replaces passlib;
-   `@model_validator(mode='before')` for stocks/recipes PascalCase remap;
-   websocket gains `/internal/discord/incoming` HMAC endpoint + outbound
-   helper that posts to `http://hub-bot:9000/send`.
+   `@model_validator(mode='before')` for stocks/recipes PascalCase remap.
+   ~~websocket gains `/internal/discord/incoming` HMAC endpoint + outbound
+   helper~~ — **dropped, see Phase-4 pivot above**: the whole messaging path
+   is deleted, not rebuilt.
 4. **Bot code cleanup** — delete `legacy/discord-bot/` and
-   `docs/discord-bot-port.md` (parked / authored in substep 1). Gated
-   on infra `hub-bot` substack having been applied on the hub (so the
-   external `hub-bot:9000` service exists). Pure deletion pass — no
-   new behavior.
+   `docs/discord-bot-port.md` (parked / authored in substep 1). Now gated
+   on **relay cutover** (relay-edge-discord replaces the in-repo bot); the
+   `hub-bot:9000` model is obsolete per the Phase-4 pivot. Pure deletion
+   pass — no new behavior.
 5. **Dev runtime** — `docker-compose.yml` for local dev (api + postgres +
    bot). **No production Dockerfile** — hub-python bind-mounts source and
    runs `uv sync` at container start (see infra D1). `.hooks/deploy.sh`

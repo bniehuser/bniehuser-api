@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from .endpoints import auth, food, health, recipes, stocks, users, weather, websocket
+from .endpoints import auth, food, health, recipes, stocks, users, weather
 
 api_router = APIRouter()
 
@@ -10,5 +10,4 @@ api_router.include_router(stocks.router, prefix="/stocks", tags=["Stocks"])
 api_router.include_router(recipes.router, prefix="/recipes", tags=["Recipes"])
 api_router.include_router(food.router, prefix="/food", tags=["Food"])
 api_router.include_router(weather.router, prefix="/weather", tags=["Weather"])
-api_router.include_router(websocket.router, tags=["Websocket"])
 api_router.include_router(health.router, tags=["Utilities"])

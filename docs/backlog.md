@@ -16,10 +16,6 @@ sections is rough priority.
   that handle 3.1's nullable shape: `@hey-api/openapi-ts`,
   `openapi-typescript` + `openapi-fetch`, or `orval`. Swap in the SPA
   repo, then drop the `openapi_version` pin here.
-- **Websocket auth layer 2 — `VITE_WS_TOKEN`.** Static token baked
-  into the SPA build, appended as `?token=` on the WS URL, validated
-  server-side. Adds infra-side scope: SSM → CF Pages env-var pipeline.
-  Flag in `~/code/barry/infra/PROJECT.md` when starting.
 - **Caching for external-API proxies.** Stocks (Finnhub), recipes
   (Spoonacular + TheMealDB), food (OpenFoodFacts), and weather
   (Open-Meteo) all hit rate-limited upstreams and return cache-friendly
@@ -42,6 +38,20 @@ sections is rough priority.
   DB or Redis state for revocation, client-side refresh handling)
   and the single-user playground doesn't justify them. Revisit when
   there's a real user base.
+- **Migrate api JWT to asymmetric signing for multi-tenant trust
+  separation.** Current is HS256 (symmetric `SECRET_KEY`), so *verify
+  == mint*. The Phase-4 pivot has relay-edge-web validate api's JWT
+  directly (shared-secret), which is fine while everything is one trust
+  domain (we operate every tenant, internal hub network, no real
+  external users). It becomes a liability the moment a boundary
+  diverges: a third-party-operated edge, public exposure, or per-surface
+  scoping — a shared symmetric secret lets any holder forge full-access
+  api tokens. Fix: move signing to RS256/EdDSA (or expose a JWKS
+  endpoint) so edges get verify-only public keys and cannot mint;
+  optionally add an `aud`/scope claim so the chat token is
+  least-privilege. Keeps the "edge consumes api's JWT" interface
+  unchanged (no react change). **Graduation trigger:** first divergent
+  trust boundary. Related: the token-strategy item above.
 - **Test suite expansion beyond smoke tests.** Modernization lands
   smoke tests only — one happy-path per router + WS origin-reject
   (substep 3 acceptance). Expand to: property tests for the
