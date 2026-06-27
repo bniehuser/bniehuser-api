@@ -39,7 +39,7 @@ class Forecast(BaseModel):
     days: list[DailyForecast]
 
 
-@router.get("/current", response_model=CurrentWeather)
+@router.get("/current", response_model=CurrentWeather, operation_id="getCurrentWeather")
 async def current(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
@@ -69,7 +69,7 @@ async def current(
     return await with_upstream(fetch)
 
 
-@router.get("/forecast", response_model=Forecast)
+@router.get("/forecast", response_model=Forecast, operation_id="getWeatherForecast")
 async def forecast(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),

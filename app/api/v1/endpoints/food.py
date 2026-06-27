@@ -21,7 +21,7 @@ class Product(BaseModel):
     nutriments: dict[str, Any] = {}
 
 
-@router.get("/barcode/{barcode}", response_model=Product)
+@router.get("/barcode/{barcode}", response_model=Product, operation_id="lookupFoodByBarcode")
 async def lookup(barcode: str) -> Product:
     client = get_client("openfoodfacts")
 

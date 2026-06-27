@@ -62,7 +62,7 @@ class Candle(BaseModel):
     volume: int
 
 
-@router.get("/{ticker}", response_model=Stock)
+@router.get("/{ticker}", response_model=Stock, operation_id="getStock")
 async def get_stock(ticker: str) -> Stock:
     client = get_client("finnhub")
     symbol = ticker.upper()
@@ -75,7 +75,7 @@ async def get_stock(ticker: str) -> Stock:
     return await with_upstream(fetch)
 
 
-@router.get("/{ticker}/history", response_model=list[Candle])
+@router.get("/{ticker}/history", response_model=list[Candle], operation_id="getStockHistory")
 async def get_stock_history(
     ticker: str,
     interval: str = Query("1day"),

@@ -10,6 +10,6 @@ except PackageNotFoundError:
     _version = "0.0.0"
 
 
-@router.get("/health")
+@router.get("/health", operation_id="healthCheck")
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": _version}

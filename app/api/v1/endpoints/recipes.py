@@ -44,7 +44,7 @@ def _meal_to_recipe(item: dict[str, Any]) -> Recipe:
     )
 
 
-@router.get("/search", response_model=RecipeSearchResponse)
+@router.get("/search", response_model=RecipeSearchResponse, operation_id="searchRecipes")
 async def search(q: str, number: int = 10) -> RecipeSearchResponse:
     spoon_client = get_client("spoonacular")
     meal_client = get_client("themealdb")

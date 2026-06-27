@@ -15,7 +15,7 @@ from app.schemas.user import UserCreate, UserRead
 router = APIRouter()
 
 
-@router.get("/", response_model=list[UserRead])
+@router.get("/", response_model=list[UserRead], operation_id="listUsers")
 async def read_users(
     session: Annotated[AsyncSession, Depends(get_session)],
     _: Annotated[User, Depends(get_current_active_superuser)],
@@ -25,7 +25,7 @@ async def read_users(
     return await crud_user.get_multi(session, skip=skip, limit=limit)
 
 
-@router.post("/", response_model=UserRead)
+@router.post("/", response_model=UserRead, operation_id="createUser")
 async def create_user(
     session: Annotated[AsyncSession, Depends(get_session)],
     _: Annotated[User, Depends(get_current_active_superuser)],
@@ -42,7 +42,7 @@ async def create_user(
     )
 
 
-@router.put("/me", response_model=UserRead)
+@router.put("/me", response_model=UserRead, operation_id="updateCurrentUser")
 async def update_user_me(
     session: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -62,14 +62,14 @@ async def update_user_me(
     return current_user
 
 
-@router.get("/me", response_model=UserRead)
+@router.get("/me", response_model=UserRead, operation_id="getCurrentUser")
 async def read_user_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     return current_user
 
 
-@router.post("/open", response_model=UserRead)
+@router.post("/open", response_model=UserRead, operation_id="createUserOpen")
 async def create_user_open(
     session: Annotated[AsyncSession, Depends(get_session)],
     password: Annotated[str, Body(...)],
@@ -91,7 +91,7 @@ async def create_user_open(
     )
 
 
-@router.get("/{user_id}", response_model=UserRead)
+@router.get("/{user_id}", response_model=UserRead, operation_id="getUser")
 async def read_user_by_id(
     user_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],

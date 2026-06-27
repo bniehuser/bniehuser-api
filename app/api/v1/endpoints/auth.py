@@ -15,7 +15,7 @@ from app.schemas.auth import Msg, Token
 router = APIRouter()
 
 
-@router.post("/login/access-token", response_model=Token)
+@router.post("/login/access-token", response_model=Token, operation_id="login")
 async def login_access_token(
     session: Annotated[AsyncSession, Depends(get_session)],
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -38,6 +38,7 @@ async def login_access_token(
     "/password-recovery/{email}",
     response_model=Msg,
     status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    operation_id="recoverPassword",
 )
 async def recover_password(
     email: str,
@@ -53,7 +54,7 @@ async def recover_password(
     )
 
 
-@router.post("/reset-password/", response_model=Msg)
+@router.post("/reset-password/", response_model=Msg, operation_id="resetPassword")
 async def reset_password(
     session: Annotated[AsyncSession, Depends(get_session)],
     token: Annotated[str, Body(...)],
